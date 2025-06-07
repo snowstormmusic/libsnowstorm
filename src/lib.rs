@@ -1,5 +1,6 @@
 use std::error::Error;
-use std::fmt::format;
+use std::fmt;
+use std::fmt::{format, Display};
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use mpris::PlayerFinder;
 use rusqlite::Connection;
 use rusqlite::fallible_iterator::FallibleIterator;
 use xdir::{config, home};
+use crate::SnowstormErrors::NoIndex;
 
 #[derive(Debug, Default, Clone)]
 pub struct OverlayMetadata {
@@ -17,7 +19,16 @@ pub struct OverlayMetadata {
     pub album: String,
     pub time: u64,
 }
-
+#[derive(Debug, Clone)]
+enum SnowstormErrors {
+    NoIndex,
+}
+impl Display for SnowstormErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl std::error::Error for SnowstormErrors {}
 #[derive(Debug)]
 pub struct SongMetadata {
     pub name: String,
@@ -67,39 +78,42 @@ metadata.lyrics_location.unwrap()
 
 }
 
-pub fn read_folder(location: PathBuf) {
-    for path in location.read_dir().unwrap() {
+pub fn read_folder(location: PathBuf) -> Result<(), Box<dyn Error>> {
+    for path in location.read_dir()?{
         if let Ok(path) = path {
-            if path.file_type().unwrap().is_file() {
-                write_to_database(path.path());
+            if path.file_type()?.is_file() {
+                write_to_database(path.path())?;
             }
-            else if path.file_type().unwrap().is_dir() {
-                read_folder(path.path());
+            else if path.file_type()?.is_dir() {
+                read_folder(path.path())?;
             }
         }
     }
+    Ok(())
 }
 
-pub fn get_lyric(path: String, time: i64) -> String {
+pub fn get_lyric(path: String, time: i64) -> Result<String, Box<dyn Error>> {
     eprintln!("{path}aa");
     let path = Path::new(&path);
     let mut lyrics = String::new();
-    File::open(path).unwrap().read_to_string(&mut lyrics).unwrap();
-    let lyrics = Lyrics::from_str(&lyrics).unwrap_or_default();
+    File::open(path)?.read_to_string(&mut lyrics)?;
+    let lyrics = Lyrics::from_str(&lyrics)?;
     let timed_lines = lyrics.get_timed_lines();
-    let idx = lyrics.find_timed_line_index(TimeTag::new(time)).unwrap();
-    return timed_lines[idx].1.to_string();
+    let idx = lyrics.find_timed_line_index(TimeTag::new(time));
+    if let   Some(idx)=idx {    return Ok(timed_lines.get(idx).unwrap().1.to_string());
+    }
+    else{Err(NoIndex.into())}
 }
 
-pub fn search_db(data: OverlayMetadata) -> String {
+pub fn search_db(data: OverlayMetadata) -> Result<String, Box<dyn Error>> {
 let r: String = get_database()
     .prepare("SELECT lyrics FROM songs WHERE name = :n AND album = :a")
-    .unwrap()
+    ?
     .query_map(&[(":n", &data.name),(":a", &data.album)], |row| {
 
-    Ok(row.get(0).unwrap())
-}).unwrap().next().unwrap_or(Ok("".to_string())).unwrap();
-    format!("{:?}",r).to_string()
+    Ok(row.get(0)?)
+})?.next().unwrap_or(Ok("".to_string()))?;
+    Ok(format!("{:?}",r).to_string())
 
 }
 pub fn init() {
