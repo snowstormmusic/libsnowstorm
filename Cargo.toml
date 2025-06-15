@@ -1,0 +1,11 @@
+[package]
+name = "libsnowstorm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mpris = "2.0.1"
+rusqlite = { version = "0.36.0", features = ["bundled"] }
+xdir = "0.1.0"
+audiotags2 = "0.3.1"
+lrc = "0.1.8"
